@@ -11,7 +11,9 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use ratatui::{backend::CrosstermBackend, layout::{Constraint, Direction, Layout}, style::{Color, Modifier, Style}, text::{Span, Spans}, widgets::{Block, Borders, Paragraph}, Frame, Terminal};
+use ratatui::{backend::CrosstermBackend, layout::{Constraint, Direction, Layout},
+              style::{Color, Modifier, Style}, text::{Span, Spans},
+              widgets::{Block, Borders, Paragraph}, Frame, Terminal};
 use std::error::Error;
 
 fn main() -> Result<(), Box<dyn Error>> {

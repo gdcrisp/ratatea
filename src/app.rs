@@ -1,10 +1,17 @@
-use crate::order_item::OrderItem;
 use crate::order::Order;
+use crate::order_item::OrderItem;
 use crate::utils::hsv_to_rgb;
+use ratatui::{
+    backend::CrosstermBackend,
+    layout::Rect,
+    style::{Color, Modifier, Style},
+    text::{Span, Spans},
+    widgets::{Block, Borders, Paragraph},
+    Frame,
+};
 use rusqlite::{params, Connection};
 use serde_json;
 use std::error::Error;
-use ratatui::{layout::Rect, text::{Span, Spans}, widgets::{Block, Borders, Paragraph}, Frame, style::{Color, Modifier, Style}, backend::CrosstermBackend};
 use std::io::Stdout;
 
 pub struct App {
@@ -94,7 +101,11 @@ impl App {
         match self.current_list().len() {
             0 => {}
             len => {
-                self.cursor = if self.cursor == 0 { len - 1 } else { self.cursor - 1 };
+                self.cursor = if self.cursor == 0 {
+                    len - 1
+                } else {
+                    self.cursor - 1
+                };
                 self.selection_effect = None;
             }
         }
@@ -158,10 +169,8 @@ impl App {
         if self.page == 3 && !self.orders.is_empty() {
             let order = self.orders.remove(self.cursor);
             let items_json = serde_json::to_string(&order.items)?;
-            self.db.execute(
-                "DELETE FROM orders WHERE items = ?1",
-                params![items_json],
-            )?;
+            self.db
+                .execute("DELETE FROM orders WHERE items = ?1", params![items_json])?;
             if self.cursor >= self.orders.len() {
                 self.cursor = self.orders.len().saturating_sub(1);
             }
@@ -171,17 +180,34 @@ impl App {
 
     pub fn current_list(&self) -> Vec<String> {
         match self.page {
-            0 => self.options.iter().map(|item| format!("{:?}", item)).collect(),
+            0 => self
+                .options
+                .iter()
+                .map(|item| format!("{:?}", item))
+                .collect(),
             1 => self.cart.iter().map(|item| format!("{:?}", item)).collect(),
-            3 => self.orders.iter().map(|order| order.items.iter().map(|item| format!("{:?}", item)).collect::<Vec<_>>().join(", ")).collect(),
+            3 => self
+                .orders
+                .iter()
+                .map(|order| {
+                    order
+                        .items
+                        .iter()
+                        .map(|item| format!("{:?}", item))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                })
+                .collect::<Vec<_>>(),
             _ => vec![],
         }
     }
 
     pub fn update_gradient(&mut self) {
         self.gradient_index = (self.gradient_index + 1) % 360;
-        if self.gradient_index % 4 == 0 { // Slow down the magnify effect
-            self.magnify_index = (self.magnify_index + 1) % self.current_list().get(self.cursor).map_or(1, |s| s.len());
+        if self.gradient_index % 4 == 0 {
+            // Slow down the magnify effect
+            self.magnify_index = (self.magnify_index + 1)
+                % self.current_list().get(self.cursor).map_or(1, |s| s.len());
         }
     }
 
@@ -191,25 +217,32 @@ impl App {
             .map(|(i, c)| {
                 let hue = ((index + i * 3) % 360) as f64;
                 let (r, g, b) = hsv_to_rgb(hue, 0.6, 0.8);
-                let style = if i == self.magnify_index {
-                    Style::default()
+                let style = match i {
+                    _ if i == self.magnify_index => Style::default()
                         .fg(Color::Rgb(r, g, b))
-                        .add_modifier(Modifier::BOLD)
-                } else if i == (self.magnify_index + 1) % text.len() || i == (self.magnify_index + text.len() - 1) % text.len() {
-                    Style::default()
-                        .fg(Color::Rgb(r, g, b))
-                        .add_modifier(Modifier::ITALIC)
-                } else {
-                    Style::default()
-                        .fg(Color::Rgb(r, g, b))
+                        .add_modifier(Modifier::BOLD),
+                    _ if i == (self.magnify_index + 1) % text.len()
+                        || i == (self.magnify_index + text.len() - 1) % text.len() =>
+                    {
+                        Style::default()
+                            .fg(Color::Rgb(r, g, b))
+                            .add_modifier(Modifier::ITALIC)
+                    }
+                    _ => Style::default().fg(Color::Rgb(r, g, b)),
                 };
                 Span::styled(c.to_string(), style)
             })
             .collect()
     }
 
-    pub fn render_selection_effect(&self, f: &mut Frame<CrosstermBackend<Stdout>>, area: Rect, text: &str) {
-        let border: Vec<Span> = "-".repeat(text.len() + 4)
+    pub fn render_selection_effect(
+        &self,
+        f: &mut Frame<CrosstermBackend<Stdout>>,
+        area: Rect,
+        text: &str,
+    ) {
+        let border: Vec<Span> = "-"
+            .repeat(text.len() + 4)
             .chars()
             .enumerate()
             .map(|(i, c)| {
@@ -217,7 +250,9 @@ impl App {
                 let (r, g, b) = hsv_to_rgb(hue, 0.6, 0.8);
                 Span::styled(
                     c.to_string(),
-                    Style::default().fg(Color::Rgb(r, g, b)).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(Color::Rgb(r, g, b))
+                        .add_modifier(Modifier::BOLD),
                 )
             })
             .collect();
@@ -227,11 +262,13 @@ impl App {
             border_spans.clone(),
             Spans::from(Span::styled(
                 format!("| {} |", text),
-                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
             )),
             border_spans,
         ])
-            .block(Block::default().borders(Borders::ALL));
+        .block(Block::default().borders(Borders::ALL));
 
         f.render_widget(content, area);
     }
