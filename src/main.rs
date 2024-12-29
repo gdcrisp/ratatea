@@ -26,6 +26,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let mut app = App::new()?;
     app.load_data()?;
+    app.page = 0;
 
     loop {
         terminal.draw(|f| {
@@ -37,23 +38,29 @@ fn main() -> Result<(), Box<dyn Error>> {
 
             match app.page {
                 0 => {
+                    let title = Paragraph::new("Select User")
+                        .block(Block::default().borders(Borders::ALL));
+                    f.render_widget(title, chunks[0]);
+                    app.render_user_list(f, chunks[0]);
+                }
+                1 => {
+                    let input = Paragraph::new(app.input.clone())
+                        .block(Block::default().borders(Borders::ALL).title("Add New User"));
+                    f.render_widget(input, chunks[0]);
+                }
+                2 => {
                     let title = Paragraph::new("Menu")
                         .block(Block::default().borders(Borders::ALL));
                     f.render_widget(title, chunks[0]);
                     app.render_list(f, chunks[0]);
                 }
-                1 => {
+                3 => {
                     let title = Paragraph::new("Cart")
                         .block(Block::default().borders(Borders::ALL));
                     f.render_widget(title, chunks[0]);
                     app.render_list(f, chunks[0]);
                 }
-                2 => {
-                    let input = Paragraph::new(app.input.clone())
-                        .block(Block::default().borders(Borders::ALL).title("Add New Item"));
-                    f.render_widget(input, chunks[0]);
-                }
-                3 => {
+                4 => {
                     let title = Paragraph::new("Orders")
                         .block(Block::default().borders(Borders::ALL));
                     f.render_widget(title, chunks[0]);
@@ -67,25 +74,27 @@ fn main() -> Result<(), Box<dyn Error>> {
             if let Event::Key(KeyEvent { code, .. }) = event::read()? {
                 match code {
                     KeyCode::Char('q') => break,
-                    KeyCode::Up if app.page != 2 => app.prev_item(),
-                    KeyCode::Down if app.page != 2 => app.next_item(),
+                    KeyCode::Up if app.page != 1 => app.prev_item(),
+                    KeyCode::Down if app.page != 1 => app.next_item(),
                     KeyCode::Enter => {
-                        if app.page == 0 || app.page == 1 {
+                        if app.page == 0 {
+                            app.select_user();
+                        } else if app.page == 1 {
+                            app.add_user();
+                        } else if app.page == 2 || app.page == 3 {
                             app.select_item()?;
-                        } else if app.page == 2 {
-                            app.add_item_to_menu();
                         }
                     }
                     KeyCode::Tab => app.next_page(),
-                    KeyCode::Char(c) if app.page == 2 => app.input.push(c),
-                    KeyCode::Backspace if app.page == 2 => {
+                    KeyCode::Char(c) if app.page == 1 => app.input.push(c),
+                    KeyCode::Backspace if app.page == 1 => {
                         app.input.pop();
                     }
-                    KeyCode::Esc if app.page == 1 => {
+                    KeyCode::Esc if app.page == 3 => {
                         app.add_order()?;
                         app.load_data()?;
                     }
-                    KeyCode::Char(d) if app.page == 3 => {
+                    KeyCode::Char(d) if app.page == 4 => {
                         app.remove_order()?;
                         app.load_data()?;
                     }

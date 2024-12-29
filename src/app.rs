@@ -25,6 +25,8 @@ pub struct App {
     pub magnify_index: usize,
     pub input: String,
     pub selection_effect: Option<(usize, usize)>,
+    pub users: Vec<String>,
+    pub selected_user: Option<String>, 
 }
 
 impl App {
@@ -41,9 +43,28 @@ impl App {
             );
             CREATE TABLE IF NOT EXISTS orders (
                 id INTEGER PRIMARY KEY,
-                items TEXT NOT NULL
+                items TEXT NOT NULL,
+                name TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY,
+                name TEXT NOT NULL
             );",
         )?;
+        db.execute(
+            "ALTER TABLE orders ADD COLUMN name TEXT",
+            [],
+        ).ok();
+
+        let users = {
+            let mut stmt = db.prepare("SELECT name FROM users")?;
+            let users_iter = stmt.query_map([], |row| {
+                let name: String = row.get(0)?;
+                Ok(name)
+            })?;
+            users_iter.collect::<Result<Vec<String>, _>>()?
+        };
+
         Ok(Self {
             db,
             options: vec![
@@ -62,25 +83,19 @@ impl App {
             magnify_index: 0,
             input: String::new(),
             selection_effect: None,
+            users,
+            selected_user: None,
         })
     }
 
     pub fn load_data(&mut self) -> Result<(), Box<dyn Error>> {
-        let mut stmt = self.db.prepare("SELECT name FROM cart")?;
-        let cart_iter = stmt.query_map([], |row| {
-            let name: String = row.get(0)?;
-            let item: OrderItem = serde_json::from_str(&name)
-                .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
-            Ok(item)
-        })?;
-        self.cart = cart_iter.collect::<Result<Vec<OrderItem>, _>>()?;
-
-        let mut stmt = self.db.prepare("SELECT items FROM orders")?;
+        let mut stmt = self.db.prepare("SELECT items, name FROM orders")?;
         let orders_iter = stmt.query_map([], |row| {
             let items: String = row.get(0)?;
+            let name: String = row.get(1)?;
             let items: Vec<OrderItem> = serde_json::from_str(&items)
                 .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
-            Ok(Order { items })
+            Ok(Order { items, name })
         })?;
         self.orders = orders_iter.collect::<Result<Vec<Order>, _>>()?;
 
@@ -92,7 +107,7 @@ impl App {
             0 => {}
             len => {
                 self.cursor = (self.cursor + 1) % len;
-                self.selection_effect = None; // Clear selection effect
+                self.selection_effect = None;
             }
         }
     }
@@ -112,7 +127,7 @@ impl App {
     }
 
     pub fn select_item(&mut self) -> Result<(), Box<dyn Error>> {
-        if self.page == 0 {
+        if self.page == 2 {
             if let Some(item) = self.options.get(self.cursor) {
                 self.cart.push(item.clone());
                 self.db.execute(
@@ -121,7 +136,7 @@ impl App {
                 )?;
                 self.selection_effect = Some((self.cursor, 20));
             }
-        } else if self.page == 1 {
+        } else if self.page == 3 {
             if !self.cart.is_empty() {
                 let item = self.cart.remove(self.cursor);
                 self.db.execute(
@@ -138,35 +153,49 @@ impl App {
     }
 
     pub fn next_page(&mut self) {
-        self.page = (self.page + 1) % 4;
+        self.page = match self.page {
+            0 => 1,
+            1 => 2,
+            2 => 3,
+            3 => 4,
+            4 => 0,
+            _ => 0,
+        };
         self.cursor = 0;
-        if self.page == 2 {
+        if self.page == 1 {
             self.input.clear();
         }
     }
 
-    pub fn add_item_to_menu(&mut self) {
-        if let Some(item) = OrderItem::from_str(&self.input.trim()) {
-            self.options.push(item);
-            self.input.clear();
-        }
+ pub fn add_user(&mut self) {
+    let user = self.input.trim().to_string();
+    if !user.is_empty() && !self.users.contains(&user) {
+        self.users.push(user.clone());
+        self.db.execute(
+            "INSERT INTO users (name) VALUES (?1)",
+            params![user],
+        ).unwrap();
+        self.input.clear();
+    }
     }
 
     pub fn add_order(&mut self) -> Result<(), Box<dyn Error>> {
-        if !self.cart.is_empty() {
+        if !self.cart.is_empty() && self.selected_user.is_some() {
             let items_json = serde_json::to_string(&self.cart)?;
             self.db.execute(
-                "INSERT INTO orders (items) VALUES (?1)",
-                params![items_json],
+                "INSERT INTO orders (items, name) VALUES (?1, ?2)",
+                params![items_json, self.selected_user.clone().unwrap()],
             )?;
             self.cart.clear();
             self.db.execute("DELETE FROM cart", [])?;
+        } else {
+            println!("Please select a user before placing an order.");
         }
         Ok(())
     }
 
     pub fn remove_order(&mut self) -> Result<(), Box<dyn Error>> {
-        if self.page == 3 && !self.orders.is_empty() {
+        if self.page == 4 && !self.orders.is_empty() {
             let order = self.orders.remove(self.cursor);
             let items_json = serde_json::to_string(&order.items)?;
             self.db
@@ -180,32 +209,30 @@ impl App {
 
     pub fn current_list(&self) -> Vec<String> {
         match self.page {
-            0 => self
-                .options
-                .iter()
-                .map(|item| format!("{:?}", item))
-                .collect(),
-            1 => self.cart.iter().map(|item| format!("{:?}", item)).collect(),
-            3 => self
-                .orders
-                .iter()
-                .map(|order| {
-                    order
-                        .items
-                        .iter()
-                        .map(|item| format!("{:?}", item))
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                })
-                .collect::<Vec<_>>(),
+            0 => self.users.clone(),
+            2 => self.options.iter().map(|item| format!("{:?}", item)).collect(), // Menu page
+            3 => self.cart.iter().map(|item| format!("{:?}", item)).collect(), // Cart page
+            4 => self.orders.iter().map(|order| {
+                format!("{}: {}", order.name, order.items.iter().map(|item| format!("{:?}", item)).collect::<Vec<_>>().join(", "))
+            }).collect::<Vec<_>>(),
             _ => vec![],
         }
     }
+    pub fn render_user_list(&self, f: &mut Frame<CrosstermBackend<Stdout>>, area: Rect) {
+        let items = self.map_items(&self.users);
+        let content = Paragraph::new(items).block(Block::default().borders(Borders::ALL));
+        f.render_widget(content, area);
+    }
 
+    pub fn select_user(&mut self) {
+        if let Some(user) = self.users.get(self.cursor) {
+            self.selected_user = Some(user.clone());
+            self.page = 2;
+        }
+    }
     pub fn update_gradient(&mut self) {
         self.gradient_index = (self.gradient_index + 1) % 360;
         if self.gradient_index % 4 == 0 {
-            // Slow down the magnify effect
             self.magnify_index = (self.magnify_index + 1)
                 % self.current_list().get(self.cursor).map_or(1, |s| s.len());
         }
@@ -268,22 +295,15 @@ impl App {
             )),
             border_spans,
         ])
-        .block(Block::default().borders(Borders::ALL));
+            .block(Block::default().borders(Borders::ALL));
 
         f.render_widget(content, area);
     }
-
-    pub fn render_list(&self, f: &mut Frame<CrosstermBackend<Stdout>>, area: Rect) {
-        let items: Vec<Spans> = self
-            .current_list()
+    fn map_items(&self, items: &[String]) -> Vec<Spans> {
+        items
             .iter()
             .enumerate()
             .map(|(i, item)| {
-                if let Some((effect_index, _)) = self.selection_effect {
-                    if i == effect_index {
-                        return Spans::from("");
-                    }
-                }
                 if i == self.cursor {
                     Spans::from(self.render_gradient_text(item, self.gradient_index))
                 } else {
@@ -293,20 +313,15 @@ impl App {
                     ))
                 }
             })
-            .collect();
-
-        let mut list_area = area;
-        if let Some((effect_index, _)) = self.selection_effect {
-            if effect_index < self.cursor {
-                list_area.height += 10;
-            }
-        }
-
+            .collect()
+    }
+    pub fn render_list(&self, f: &mut Frame<CrosstermBackend<Stdout>>, area: Rect) {
+        let items = self.map_items(&self.current_list());
         let content = Paragraph::new(items).block(Block::default().borders(Borders::ALL));
-        f.render_widget(content, list_area);
+        f.render_widget(content, area);
 
         if let Some((effect_index, _)) = self.selection_effect {
-            if effect_index == self.cursor {
+            if effect_index == self.cursor && !(self.page == 3 && self.current_list().len() < 1) {
                 self.render_selection_effect(f, area, &self.current_list()[effect_index]);
             }
         }
