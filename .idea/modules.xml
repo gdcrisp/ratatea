@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/rustmix.iml" filepath="$PROJECT_DIR$/rustmix.iml" />
+      <module fileurl="file://$PROJECT_DIR$/ratatea.iml" filepath="$PROJECT_DIR$/ratatea.iml" />
     </modules>
   </component>
 </project>
