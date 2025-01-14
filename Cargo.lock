@@ -235,6 +235,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "ratatea"
+version = "0.1.0"
+dependencies = [
+ "crossterm 0.24.0",
+ "ratatui",
+ "rusqlite",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "ratatui"
 version = "0.20.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -268,17 +279,6 @@ dependencies = [
  "hashlink",
  "libsqlite3-sys",
  "smallvec",
-]
-
-[[package]]
-name = "rustmix"
-version = "0.1.0"
-dependencies = [
- "crossterm 0.24.0",
- "ratatui",
- "rusqlite",
- "serde",
- "serde_json",
 ]
 
 [[package]]
